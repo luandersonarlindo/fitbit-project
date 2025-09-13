@@ -1,92 +1,79 @@
 import streamlit as st
-import pandas as pd
-import os
+from pathlib import Path
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.db import create_database, exec_sql_files
-from core.etl import load_csv_to_sor, transform_to_sot, transform_to_spec
-from core.train import train_and_save
-from core.predict import predict_from_pickle
+# Ajustar import para módulos locais
+sys.path.append(str(Path(__file__).resolve().parents[0]))
 
-st.title("Fitbit Project - Predição de Calorias")
+from core.models import train, predict
+from core.explain import coefficients
+from core.chatbot import rules
 
-option = st.radio("Escolha a opção:", ("Treinar modelo", "Usar modelo salvo (.pickle)"))
+st.set_page_config(page_title="Fitbit Analytics", page_icon="📊", layout="wide")
 
-# Caminhos ajustados para nova estrutura
-engine_url = "sqlite:///../database/fitbit.db"
-csv_path = "../data/dailyActivity_merged.csv"
+st.title("📊 Fitbit Analytics Dashboard")
+st.markdown("Bem-vindo ao painel interativo de análise Fitbit!")
 
-if option == "Treinar modelo":
-    st.write("🔄 Rodando pipeline completo...")
-    
-    try:
-        engine = create_database(engine_url)
-        exec_sql_files(engine)
-        load_csv_to_sor(engine, csv_path)
-        transform_to_sot(engine)
-        transform_to_spec(engine)
-        model_path, metrics = train_and_save(engine)
-        st.success(f"✅ Modelo treinado e salvo em {model_path}")
-        st.json(metrics)
-    except Exception as e:
-        st.error(f"❌ Erro durante o treinamento: {str(e)}")
-        st.info("💡 Tente fechar outras conexões com o banco de dados ou reinicie o aplicativo.")
+menu = st.sidebar.radio("Menu", ["🏋️ Treinar Modelo", "📈 Predição de Calorias", "🧮 Coeficientes do Modelo", "🤖 Chatbot Fitbit"])
 
-else:
-    st.write("📁 Carregando modelo salvo...")
-    
-    # Verifica se o modelo existe
-    if not os.path.exists("../model/calories_regression.pickle"):
-        st.error("❌ Modelo não encontrado! Execute o treinamento primeiro.")
-        st.info("👆 Selecione 'Treinar modelo' acima para criar o modelo.")
-    else:
+if menu == "🏋️ Treinar Modelo":
+    st.header("Treinamento do Modelo de Regressão")
+    if st.button("Treinar agora"):
         try:
-            # Verifica se o banco já existe e tem dados
-            if os.path.exists("fitbit.db"):
-                from sqlalchemy import create_engine
-                engine = create_engine(engine_url, future=True)
-                
-                # Tenta verificar se as tabelas existem
-                try:
-                    df_spec = pd.read_sql("SELECT * FROM spec_activity_features LIMIT 1", engine)
-                    # Se chegou até aqui, os dados já existem
-                    st.info("🔄 Usando dados existentes do banco...")
-                    df_spec = pd.read_sql("SELECT * FROM spec_activity_features", engine)
-                except:
-                    # Precisa processar os dados
-                    st.info("📊 Processando dados para previsão...")
-                    exec_sql_files(engine)
-                    load_csv_to_sor(engine, csv_path)
-                    transform_to_sot(engine)
-                    transform_to_spec(engine)
-                    df_spec = pd.read_sql("SELECT * FROM spec_activity_features", engine)
-            else:
-                # Banco não existe, precisa criar
-                st.info("🏗️ Criando banco e processando dados...")
-                engine = create_database(engine_url)
-                exec_sql_files(engine)
-                load_csv_to_sor(engine, csv_path)
-                transform_to_sot(engine)
-                transform_to_spec(engine)
-                df_spec = pd.read_sql("SELECT * FROM spec_activity_features", engine)
-            
-            # Fazer previsões
-            preds = predict_from_pickle("../model/calories_regression.pickle", df_spec)
-            
-            st.success("✅ Previsões concluídas!")
-            st.write(f"📊 Total de registros processados: {len(preds)}")
-            st.write("🔮 Primeiras 10 previsões de calorias:", preds[:10])
-            
-            # Mostrar estatísticas
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Mínimo", f"{preds.min():.0f}")
-            with col2:
-                st.metric("Média", f"{preds.mean():.0f}")
-            with col3:
-                st.metric("Máximo", f"{preds.max():.0f}")
-                
+            train.train()
+            st.success("✅ Treinamento concluído e modelo salvo!")
         except Exception as e:
-            st.error(f"❌ Erro ao fazer previsões: {str(e)}")
-            st.info("💡 Tente reiniciar o aplicativo ou execute o treinamento novamente.")
+            st.error(f"Erro durante o treinamento: {e}")
+
+elif menu == "📈 Predição de Calorias":
+    st.header("Faça uma previsão de calorias queimadas")
+    steps = st.number_input("Passos totais", min_value=0, value=8000)
+    very_active = st.number_input("Minutos muito ativos", min_value=0, value=30)
+    fairly_active = st.number_input("Minutos moderadamente ativos", min_value=0, value=20)
+    lightly_active = st.number_input("Minutos levemente ativos", min_value=0, value=60)
+    sedentary = st.number_input("Minutos sedentários", min_value=0, value=600)
+    distance = st.number_input("Distância percorrida (km)", min_value=0.0, value=6.5, format="%.2f")
+
+    if st.button("Prever"):
+        try:
+            features = {
+                "TotalSteps": steps,
+                "VeryActiveMinutes": very_active,
+                "FairlyActiveMinutes": fairly_active,
+                "LightlyActiveMinutes": lightly_active,
+                "SedentaryMinutes": sedentary,
+                "Distance": distance
+            }
+            result = predict.predict_from_row(features)
+            st.success(f"🔥 Calorias previstas: {result:.2f}")
+        except Exception as e:
+            st.error(f"Erro na predição: {e}")
+
+elif menu == "🧮 Coeficientes do Modelo":
+    st.header("Coeficientes do Modelo de Regressão")
+    try:
+        model_path = Path(__file__).parents[1] / "model" / "calories_regression.pickle"
+        coefficients.show_coefficients(model_path)
+        st.info("Coeficientes exibidos no console.")
+        st.write("Abra o terminal/logs do Streamlit para visualizar os coeficientes detalhados.")
+    except Exception as e:
+        st.error(f"Erro ao carregar coeficientes: {e}")
+
+elif menu == "🤖 Chatbot Fitbit":
+    st.header("Assistente Fitbit")
+    user_input = st.text_input("Digite sua pergunta (ex: 'calorias hoje', 'passos hoje')")
+    if st.button("Responder"):
+        intent = None
+        if "caloria" in user_input.lower():
+            intent = "calories_today"
+        elif "passo" in user_input.lower():
+            intent = "steps_today"
+        elif "minuto" in user_input.lower():
+            intent = "active_minutes"
+        elif "ajuda" in user_input.lower():
+            intent = "help"
+        else:
+            intent = "help"
+
+        resposta = rules.answer_intent(intent, {"Calories": 2300, "TotalSteps": 8500, "ActiveMinutes": 120})
+        st.success(resposta)
