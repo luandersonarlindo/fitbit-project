@@ -5,26 +5,32 @@ import sys
 # Ajustar import para módulos locais
 sys.path.append(str(Path(__file__).resolve().parents[0]))
 
-from core.models import train, predict
-from core.explain import coefficients
-from core.chatbot import rules
+from core.models import train, predict_from_row as predict
+from core.explain import show_coefficients as coefficients
+from core.rules import answer_intent as rules
+
 
 st.set_page_config(page_title="Fitbit Analytics", page_icon="📊", layout="wide")
 
 st.title("📊 Fitbit Analytics Dashboard")
 st.markdown("Bem-vindo ao painel interativo de análise Fitbit!")
 
-menu = st.sidebar.radio("Menu", ["🏋️ Treinar Modelo", "📈 Predição de Calorias", "🧮 Coeficientes do Modelo", "🤖 Chatbot Fitbit"])
+menu = st.sidebar.radio(
+    "Menu",
+    ["🏋️ Treinar Modelo", "📈 Predição de Calorias", "🧮 Coeficientes do Modelo", "🤖 Chatbot Fitbit"]
+)
 
+# --------------------- Treinar Modelo ---------------------
 if menu == "🏋️ Treinar Modelo":
     st.header("Treinamento do Modelo de Regressão")
     if st.button("Treinar agora"):
         try:
-            train.train()
+            train()
             st.success("✅ Treinamento concluído e modelo salvo!")
         except Exception as e:
             st.error(f"Erro durante o treinamento: {e}")
 
+# --------------------- Predição de Calorias ---------------------
 elif menu == "📈 Predição de Calorias":
     st.header("Faça uma previsão de calorias queimadas")
     steps = st.number_input("Passos totais", min_value=0, value=8000)
@@ -44,24 +50,42 @@ elif menu == "📈 Predição de Calorias":
                 "SedentaryMinutes": sedentary,
                 "Distance": distance
             }
-            result = predict.predict_from_row(features)
+            # Chamada corrigida da função
+            result = predict(features)
             st.success(f"🔥 Calorias previstas: {result:.2f}")
         except Exception as e:
             st.error(f"Erro na predição: {e}")
 
+# --------------------- Coeficientes do Modelo ---------------------
 elif menu == "🧮 Coeficientes do Modelo":
     st.header("Coeficientes do Modelo de Regressão")
     try:
-        model_path = Path(__file__).parents[1] / "model" / "calories_regression.pickle"
-        coefficients.show_coefficients(model_path)
-        st.info("Coeficientes exibidos no console.")
-        st.write("Abra o terminal/logs do Streamlit para visualizar os coeficientes detalhados.")
+        # Caminho do modelo
+        model_path = Path("../src/model/calories_regression.pickle")
+        
+        # Carregar o modelo do pickle
+        import pickle
+        with open(model_path, "rb") as f:
+            model = pickle.load(f)
+        
+        # Obter coeficientes e intercepto
+        coefs = {feature: coef for feature, coef in zip(model.feature_names_in_, model.coef_)}
+        intercept = model.intercept_
+        
+        # Exibir no Streamlit
+        st.subheader("Intercepto")
+        st.write(intercept)
+        st.subheader("Coeficientes")
+        st.json(coefs)
+        
     except Exception as e:
         st.error(f"Erro ao carregar coeficientes: {e}")
 
+
+# --------------------- Chatbot Fitbit ---------------------
 elif menu == "🤖 Chatbot Fitbit":
     st.header("Assistente Fitbit")
-    user_input = st.text_input("Digite sua pergunta (ex: 'calorias hoje', 'passos hoje')")
+    user_input = st.text_input("Digite sua pergunta (ex: 'calorias hoje', 'passos hoje', 'padrões de usuários ativos')")
     if st.button("Responder"):
         intent = None
         if "caloria" in user_input.lower():
@@ -70,10 +94,11 @@ elif menu == "🤖 Chatbot Fitbit":
             intent = "steps_today"
         elif "minuto" in user_input.lower():
             intent = "active_minutes"
-        elif "ajuda" in user_input.lower():
-            intent = "help"
+        elif "padrão" in user_input.lower() or "ativo" in user_input.lower():
+            intent = "active_patterns"
         else:
             intent = "help"
 
-        resposta = rules.answer_intent(intent, {"Calories": 2300, "TotalSteps": 8500, "ActiveMinutes": 120})
+        # Chamada corrigida da função
+        resposta = rules(intent, {"Calories": 2300, "TotalSteps": 8500, "ActiveMinutes": 120})
         st.success(resposta)

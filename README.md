@@ -350,7 +350,7 @@ Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para detalhes.
 
 ## 👥 Autores
 
-- **Luanderson Arlindo** - *Desenvolvimento inicial* - [luandersonarlindo](https://github.com/luandersonarlindo)
+- **Luanderson e Josysllan** - *Desenvolvimento inicial* - [luandersonarlindo](https://github.com/luandersonarlindo) - [josysllan](https://github.com/josysllan)
 
 ## 🙏 Agradecimentos
 
